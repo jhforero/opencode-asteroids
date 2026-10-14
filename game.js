@@ -62,6 +62,13 @@ const RADII  = [0, 16, 30, 50];   // por tamaño 1, 2, 3
 const SPEEDS = [0, 85, 55, 32];   // velocidad base por tamaño
 const POINTS = [0, 100, 50, 20];  // puntos por tamaño
 
+// ── Estrella fugaz (asteroide especial) ───────────────────────────────────────
+const SHOOTING_STAR_INTERVAL = 18;   // segundos entre apariciones
+const SHOOTING_STAR_TTL      = 7;    // vida útil antes de desaparecer
+const SHOOTING_STAR_SPEED    = 320;  // px/s (≈4× un asteroide de tamaño 1)
+const SHOOTING_STAR_RADIUS   = 9;
+const SHOOTING_STAR_POINTS   = 200;
+
 // ── Power-up de velocidad (turbo) ─────────────────────────────────────────────
 const BOOST_DURATION   = 5;    // segundos que dura el turbo
 const BOOST_MULT       = 2;    // multiplicador de propulsión
@@ -76,6 +83,7 @@ class Asteroid {
     this.y    = y;
     this.size = size;
     this.radius = RADII[size];
+    this.points = POINTS[size];
     this.dead = false;
 
     const angle = rand(0, Math.PI * 2);
@@ -121,6 +129,95 @@ class Asteroid {
     for (let i = 1; i < this.verts.length; i++)
       ctx.lineTo(this.verts[i][0], this.verts[i][1]);
     ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// ── Estrella fugaz ────────────────────────────────────────────────────────────
+class ShootingStar {
+  constructor(x, y) {
+    this.x    = x;
+    this.y    = y;
+    this.special = true;
+    this.ttl     = SHOOTING_STAR_TTL;
+    this.radius  = SHOOTING_STAR_RADIUS;
+    this.points  = SHOOTING_STAR_POINTS;
+    this.dead    = false;
+
+    const angle = rand(0, Math.PI * 2);
+    const speed = SHOOTING_STAR_SPEED * rand(0.85, 1.15);
+    this.vx = Math.cos(angle) * speed;
+    this.vy = Math.sin(angle) * speed;
+    this.rotSpeed = rand(-3, 3);
+    this.rot = rand(0, Math.PI * 2);
+    this.age = 0;
+
+    // Polígono irregular puntiagudo
+    const n = randInt(5, 7);
+    this.verts = [];
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      const r = this.radius * (i % 2 === 0 ? rand(0.9, 1.15) : rand(0.45, 0.65));
+      this.verts.push([Math.cos(a) * r, Math.sin(a) * r]);
+    }
+
+    this.trail = [{ x, y }];
+  }
+
+  update(dt) {
+    this.age += dt;
+    this.ttl -= dt;
+    if (this.ttl <= 0) {
+      this.dead = true;
+      explode(this.x, this.y, 5);
+      return;
+    }
+
+    this.x   = wrap(this.x + this.vx * dt, W);
+    this.y   = wrap(this.y + this.vy * dt, H);
+    this.rot += this.rotSpeed * dt;
+
+    this.trail.push({ x: this.x, y: this.y });
+    if (this.trail.length > 14) this.trail.shift();
+  }
+
+  split() { return []; }
+
+  draw() {
+    // Rastro
+    ctx.lineCap = 'round';
+    for (let i = 1; i < this.trail.length; i++) {
+      const a = this.trail[i - 1];
+      const b = this.trail[i];
+      const dx = b.x - a.x, dy = b.y - a.y;
+      if (Math.hypot(dx, dy) > 50) continue;  // salto por el pliegue del wrap()
+      const k = i / this.trail.length;
+      ctx.strokeStyle = `rgba(255,180,60,${(k * 0.6).toFixed(2)})`;
+      ctx.lineWidth = 1 + k * 2.5;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+    ctx.lineCap = 'butt';
+
+    // Parpadeo de aviso cuando está por expirar
+    if (this.ttl < 1.5 && Math.floor(this.ttl * 10) % 2 === 0) return;
+
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.rot);
+    ctx.strokeStyle = '#ffd24d';
+    ctx.fillStyle   = 'rgba(255,160,40,0.35)';
+    ctx.lineWidth   = 1.5;
+    ctx.lineJoin    = 'round';
+    ctx.beginPath();
+    ctx.moveTo(this.verts[0][0], this.verts[0][1]);
+    for (let i = 1; i < this.verts.length; i++)
+      ctx.lineTo(this.verts[i][0], this.verts[i][1]);
+    ctx.closePath();
+    ctx.fill();
     ctx.stroke();
     ctx.restore();
   }
@@ -305,7 +402,7 @@ let ship, bullets, asteroids, particles, powerUps;
 let score, lives, level;
 let state;      // 'playing' | 'dead' | 'gameover'
 let deadTimer;
-let powerUpTimer, boostCooldown;
+let powerUpTimer, boostCooldown, shootingStarTimer;
 
 function spawnPowerUp() {
   const SAFE_DIST = 130;
@@ -318,6 +415,18 @@ function spawnPowerUp() {
     asteroids.some(a => Math.hypot(x - a.x, y - a.y) < a.radius + 40)
   );
   return new PowerUp(x, y);
+}
+
+function spawnShootingStar() {
+  const SAFE_DIST = 180;
+  let x, y;
+  do {
+    x = rand(0, W);
+    y = rand(0, H);
+  } while (
+    ship && !ship.dead && Math.hypot(x - ship.x, y - ship.y) < SAFE_DIST
+  );
+  return new ShootingStar(x, y);
 }
 
 function spawnAsteroids(count) {
@@ -344,6 +453,7 @@ function initGame() {
   state  = 'playing';
   powerUpTimer = POWERUP_DELAY;
   boostCooldown = 0;
+  shootingStarTimer = SHOOTING_STAR_INTERVAL;
   spawnAsteroids(4);
 }
 
@@ -355,6 +465,7 @@ function nextLevel() {
   ship.reset();
   powerUpTimer = POWERUP_DELAY;
   boostCooldown = 0;
+  shootingStarTimer = SHOOTING_STAR_INTERVAL;
   spawnAsteroids(3 + level);
 }
 
@@ -396,12 +507,19 @@ function update(dt) {
 
   if (boostCooldown > 0) boostCooldown -= dt;
   if (powerUpTimer  > 0) powerUpTimer  -= dt;
+  if (shootingStarTimer > 0) shootingStarTimer -= dt;
 
   // Aparición del power-up de velocidad
   if (powerUps.length === 0 && ship.boostTimer <= 0 &&
       boostCooldown <= 0 && powerUpTimer <= 0) {
     powerUps.push(spawnPowerUp());
     powerUpTimer = POWERUP_INTERVAL;
+  }
+
+  // Aparición de la estrella fugaz
+  if (shootingStarTimer <= 0 && !asteroids.some(a => a.special)) {
+    asteroids.push(spawnShootingStar());
+    shootingStarTimer = SHOOTING_STAR_INTERVAL;
   }
 
   // Disparar
@@ -437,8 +555,8 @@ function update(dt) {
       if (!a.dead && !b.dead && dist(b, a) < a.radius) {
         b.dead = true;
         a.dead = true;
-        score += POINTS[a.size];
-        explode(a.x, a.y, a.size * 5);
+        score += a.points;
+        explode(a.x, a.y, a.special ? 16 : a.size * 5);
         newAsteroids.push(...a.split());
       }
     }
@@ -456,8 +574,8 @@ function update(dt) {
     }
   }
 
-  // Nivel completado
-  if (asteroids.length === 0) nextLevel();
+  // Nivel completado (la estrella fugaz no cuenta)
+  if (!asteroids.some(a => !a.special)) nextLevel();
 }
 
 // ── Draw ──────────────────────────────────────────────────────────────────────
