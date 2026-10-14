@@ -48,3 +48,4 @@ Luego visita `http://localhost:3000`.
 - Power-ups recogibles:
   - **Turbo**: multiplica la propulsión durante unos segundos
   - **Escudo**: rodea la nave y destruye los asteroides que la golpean durante unos segundos
+  - **Triple shot**: dispara 3 balas en abanico durante 5 segundos
