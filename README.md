@@ -45,3 +45,6 @@ Luego visita `http://localhost:3000`.
 - Asteroides se parten en fragmentos más pequeños al ser destruidos
 - Partículas de explosión al destruir asteroides
 - Sistema de skins: 4 estilos de nave (Clásica, Caza, Ovni, Flecha) que cambian silueta, color y propulsor. Se cambian con `S` y se recuerdan entre sesiones.
+- Power-ups recogibles:
+  - **Turbo**: multiplica la propulsión durante unos segundos
+  - **Escudo**: rodea la nave y destruye los asteroides que la golpean durante unos segundos
