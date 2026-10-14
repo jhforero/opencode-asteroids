@@ -77,6 +77,10 @@ const POWERUP_DELAY    = 8;    // espera inicial para el primer power-up
 const POWERUP_INTERVAL = 12;   // tiempo entre apariciones
 const POWERUP_RADIUS   = 12;
 
+// ── Power-up de triple shot ───────────────────────────────────────────────────
+const TRIPLE_DURATION = 5;                  // segundos que dura el triple shot
+const TRIPLE_SPREAD   = 12 * Math.PI / 180; // medio ángulo del abanico
+
 class Asteroid {
   constructor(x, y, size = 3) {
     this.x    = x;
@@ -225,9 +229,10 @@ class ShootingStar {
 
 // ── Power-up (turbo) ──────────────────────────────────────────────────────────
 class PowerUp {
-  constructor(x, y) {
+  constructor(x, y, type = 'boost') {
     this.x      = x;
     this.y      = y;
+    this.type   = type;
     this.radius = POWERUP_RADIUS;
     this.rot    = 0;
     this.dead   = false;
@@ -241,25 +246,47 @@ class PowerUp {
     ctx.save();
     ctx.translate(this.x, this.y);
 
-    // Aro exterior pulsante
-    ctx.strokeStyle = '#3ff';
+    const color = this.type === 'triple' ? '#8f8' : '#3ff';
+
+    // Aro exterior
+    ctx.strokeStyle = color;
     ctx.lineWidth   = 2;
     ctx.beginPath();
     ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
     ctx.stroke();
 
-    // Rayo
     ctx.rotate(this.rot);
-    ctx.beginPath();
-    ctx.moveTo( 2, -8);
-    ctx.lineTo(-5,  1);
-    ctx.lineTo( 0,  1);
-    ctx.lineTo(-2,  8);
-    ctx.lineTo( 5, -1);
-    ctx.lineTo( 0, -1);
-    ctx.closePath();
-    ctx.fillStyle = '#3ff';
-    ctx.fill();
+
+    if (this.type === 'triple') {
+      // Tres chevrons en abanico
+      ctx.strokeStyle = color;
+      ctx.lineWidth   = 1.8;
+      ctx.lineCap     = 'round';
+      for (let i = -1; i <= 1; i++) {
+        const a = i * 0.45;
+        ctx.save();
+        ctx.rotate(a);
+        ctx.beginPath();
+        ctx.moveTo(-4, -5);
+        ctx.lineTo( 2,  0);
+        ctx.lineTo(-4,  5);
+        ctx.stroke();
+        ctx.restore();
+      }
+      ctx.lineCap = 'butt';
+    } else {
+      // Rayo
+      ctx.beginPath();
+      ctx.moveTo( 2, -8);
+      ctx.lineTo(-5,  1);
+      ctx.lineTo( 0,  1);
+      ctx.lineTo(-2,  8);
+      ctx.lineTo( 5, -1);
+      ctx.lineTo( 0, -1);
+      ctx.closePath();
+      ctx.fillStyle = color;
+      ctx.fill();
+    }
 
     ctx.restore();
   }
@@ -280,16 +307,19 @@ class Ship {
     this.invincible    = 3;
     this.shootCooldown = 0;
     this.boostTimer    = 0;
+    this.tripleTimer   = 0;
     this.dead          = false;
   }
 
   get boosting() { return this.boostTimer > 0; }
+  get triple()   { return this.tripleTimer > 0; }
 
   update(dt) {
     if (this.dead) return;
     if (this.invincible    > 0) this.invincible    -= dt;
     if (this.shootCooldown > 0) this.shootCooldown -= dt;
     if (this.boostTimer    > 0) this.boostTimer    -= dt;
+    if (this.tripleTimer   > 0) this.tripleTimer   -= dt;
 
     const ROT    = 3.5;   // rad/s
     const THRUST = 260 * (this.boosting ? BOOST_MULT : 1);  // px/s²
@@ -316,7 +346,10 @@ class Ship {
     const NOSE = 21;
     const ox = this.x + Math.cos(this.angle) * NOSE;
     const oy = this.y + Math.sin(this.angle) * NOSE;
-    return [new Bullet(ox, oy, this.angle)];
+    const angles = this.triple
+      ? [this.angle - TRIPLE_SPREAD, this.angle, this.angle + TRIPLE_SPREAD]
+      : [this.angle];
+    return angles.map(a => new Bullet(ox, oy, a));
   }
 
   draw() {
@@ -414,7 +447,8 @@ function spawnPowerUp() {
     Math.hypot(x - W / 2, y - H / 2) < SAFE_DIST ||
     asteroids.some(a => Math.hypot(x - a.x, y - a.y) < a.radius + 40)
   );
-  return new PowerUp(x, y);
+  const type = Math.random() < 0.5 ? 'boost' : 'triple';
+  return new PowerUp(x, y, type);
 }
 
 function spawnShootingStar() {
@@ -511,7 +545,7 @@ function update(dt) {
 
   // Aparición del power-up de velocidad
   if (powerUps.length === 0 && ship.boostTimer <= 0 &&
-      boostCooldown <= 0 && powerUpTimer <= 0) {
+      ship.tripleTimer <= 0 && boostCooldown <= 0 && powerUpTimer <= 0) {
     powerUps.push(spawnPowerUp());
     powerUpTimer = POWERUP_INTERVAL;
   }
@@ -540,7 +574,8 @@ function update(dt) {
   for (const p of powerUps) {
     if (!p.dead && dist(ship, p) < ship.radius + p.radius) {
       p.dead = true;
-      ship.boostTimer = BOOST_DURATION;
+      if (p.type === 'triple') ship.tripleTimer = TRIPLE_DURATION;
+      else                     ship.boostTimer  = BOOST_DURATION;
     }
   }
 
@@ -610,10 +645,19 @@ function drawHUD() {
     drawLifeIcon(W - 16 - i * 22, 18);
 
   // Indicador de turbo activo
+  let indicatorY = 48;
   if (ship.boosting && !ship.dead) {
     ctx.textAlign = 'left';
     ctx.fillStyle = '#3ff';
-    ctx.fillText(`TURBO x${BOOST_MULT}  ${ship.boostTimer.toFixed(1)}s`, 14, 48);
+    ctx.fillText(`TURBO x${BOOST_MULT}  ${ship.boostTimer.toFixed(1)}s`, 14, indicatorY);
+    indicatorY += 20;
+  }
+
+  // Indicador de triple shot activo
+  if (ship.triple && !ship.dead) {
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#8f8';
+    ctx.fillText(`TRIPLE  3x  ${ship.tripleTimer.toFixed(1)}s`, 14, indicatorY);
   }
 }
 
