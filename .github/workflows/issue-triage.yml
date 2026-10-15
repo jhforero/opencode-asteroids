@@ -1,0 +1,53 @@
+name: issue-triage
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Run opencode
+        uses: anomalyco/opencode/github@latest
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+        with:
+          model: opencode/big-pickle
+          prompt: |
+            Estás haciendo triage del issue recién creado.
+
+            Reglas obligatorias:
+            1. NUNCA modifiques, borres ni reformatees el texto original del cuerpo
+               del issue. Debe quedar exactamente como lo escribió la persona.
+            2. Aplica 1 o más labels usando SOLO este set estándar:
+               bug, enhancement, question, documentation, duplicate, wontfix,
+               good first issue.
+               Elige según el contenido. Si una label no existe en el repo, créala.
+            3. Añade al FINAL del cuerpo una sección nueva (sin tocar lo anterior),
+               separada por `---`, con este formato en español:
+
+               ## Información de revisión (generada automáticamente)
+
+               **Clasificación:** <tipo detectado>
+
+               ### Checklist de reproducción
+               - [ ] Pasos claros para reproducir el problema
+               - [ ] Comportamiento esperado vs. comportamiento actual
+               - [ ] Entorno (navegador y sistema operativo)
+               - [ ] Se reproduce en la última versión
+
+               Si el issue no es un bug, ajusta el checklist a algo relevante
+               (por ejemplo criterios de aceptación) manteniendo el encabezado.
+
+            4. Todo el texto que agregues debe estar en español.
+            5. No dejes comentarios adicionales; solo edita el issue.
