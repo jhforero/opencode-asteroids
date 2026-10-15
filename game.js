@@ -364,6 +364,18 @@ const SKINS = [
     flameX: -9,
     flameHalf: 3,
   },
+  {
+    name: 'MORADA',
+    stroke: '#a3f',
+    flame: 'rgba(200, 130, 255, 0.85)',
+    flameBoost: 'rgba(255, 210, 255, 0.9)',
+    halo: 'rgba(180, 120, 255, 0.5)',
+    hull: [[20, 0], [-12, -9], [-7, 0], [-12, 9]],
+    flameX: -8,
+    flameHalf: 4,
+    scale: 2,
+    scoreMult: 2,
+  },
 ];
 
 function drawHull(hull, scale = 1) {
@@ -398,7 +410,6 @@ class Ship {
     this.angle  = -Math.PI / 2;
     this.vx     = 0;
     this.vy     = 0;
-    this.radius = 12;
     this.thrusting     = false;
     this.invincible    = 3;
     this.shootCooldown = 0;
@@ -411,6 +422,9 @@ class Ship {
   get boosting()  { return this.boostTimer > 0; }
   get shielding() { return this.shieldTimer > 0; }
   get triple()   { return this.tripleTimer > 0; }
+  get scale()     { return SKINS[skinIndex].scale || 1; }
+  get radius()    { return 12 * this.scale; }
+  get scoreMult() { return SKINS[skinIndex].scoreMult || 1; }
 
   update(dt) {
     if (this.dead) return;
@@ -442,7 +456,7 @@ class Ship {
   tryShoot() {
     if (this.shootCooldown > 0 || this.dead) return [];
     this.shootCooldown = 0.2;
-    const NOSE = 21;
+    const NOSE = 21 * this.scale;
     const ox = this.x + Math.cos(this.angle) * NOSE;
     const oy = this.y + Math.sin(this.angle) * NOSE;
     const angles = this.triple
@@ -461,6 +475,7 @@ class Ship {
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.rotate(this.angle);
+    ctx.scale(this.scale, this.scale);
     ctx.strokeStyle = skin.stroke;
     ctx.lineWidth   = 1.5;
     ctx.lineJoin    = 'round';
@@ -711,7 +726,7 @@ function update(dt) {
       if (!a.dead && !b.dead && dist(b, a) < a.radius) {
         b.dead = true;
         a.dead = true;
-        score += a.points;
+        score += a.points * ship.scoreMult;
         explode(a.x, a.y, a.special ? 16 : a.size * 5);
         newAsteroids.push(...a.split());
       }
@@ -727,7 +742,7 @@ function update(dt) {
         if (ship.shielding) {
           // El escudo destruye el asteroide en lugar de dañar la nave
           a.dead = true;
-          score += a.points;
+          score += a.points * ship.scoreMult;
           explode(a.x, a.y, a.special ? 16 : a.size * 5);
           asteroids.push(...a.split());
         } else {
@@ -797,7 +812,11 @@ function drawHUD() {
     ctx.textAlign = 'left';
     ctx.fillStyle = SKINS[skinIndex].stroke;
     ctx.globalAlpha = alpha;
-    ctx.fillText(`SKIN: ${SKINS[skinIndex].name}`, 14, H - 14);
+    const mult = ship.scoreMult;
+    const label = mult > 1
+      ? `SKIN: ${SKINS[skinIndex].name}  x${mult} PUNTOS`
+      : `SKIN: ${SKINS[skinIndex].name}`;
+    ctx.fillText(label, 14, H - 14);
     ctx.globalAlpha = 1;
   }
 }
